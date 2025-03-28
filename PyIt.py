@@ -15,6 +15,11 @@ import json
 import os
 import sys
 import time
+import random
+from pynput.keyboard import Controller as KeyboardController, Key
+
+
+keyboard = KeyboardController()
 
 # Константы
 CONFIG_DIR = os.path.join(os.environ['LOCALAPPDATA'], 'temp', 'PyIt')
@@ -596,7 +601,7 @@ def esp(scene, pm, client, offsets, client_dll, window_width, window_height, set
                         center_x = window_width / 2
                         center_y = window_height / 2
                         screen_radius = settings['radius'] / 100.0 * min(center_x, center_y)
-                        ellipse = scene.addEllipse(QtCore.QRectF(center_x - screen_radius, center_y - screen_radius, screen_radius * 2, screen_radius * 2), QtGui.QPen(QtGui.QColor(255, 255, 255, 16), 0.5), QtCore.Qt.NoBrush)
+                        ellipse = scene.addEllipse(QtCore.QRectF(center_x - screen_radius, center_y - screen_radius, screen_radius * 2, screen_radius * 2), QtGui.QPen(QtGui.QColor(255, 100, 100, 150), 0.5), QtCore.Qt.NoBrush)
 
             except:
                 return
@@ -666,7 +671,7 @@ def get_weapon_name_by_index(index):
     522: "Knife Stiletto",
     523: "Knife Widowmaker"
 }
-    return weapon_names.get(index, 'Unknown')
+    return weapon_names.get(index, str(index))
 
 def draw_bones(scene, pm, bone_matrix, view_matrix, width, height):
     bone_ids = {
@@ -921,53 +926,178 @@ def aim():
                 return
         return target_list
 
-    def aimbot(target_list, radius, aim_mode_distance):
+    # Эта функция тоже находится внутри функции aim()
+    def aimbot(target_list, radius, aim_mode_distance, window_size):
+        """
+        Находит ближайшую цель в радиусе и перемещает мышь.
+
+        Args:
+            target_list (list): Список словарей с информацией о целях ({'pos': [x, y], 'deltaZ': dz}).
+            radius (int): Радиус активации аимбота (0-100). 0 - без ограничения.
+            aim_mode_distance (int): 0 - Ближайший к прицелу (2D), 1 - Ближайший в 3D (по размеру/deltaZ).
+            window_size (tuple): Кортеж (width, height) текущего размера окна игры.
+        """
         if not target_list:
+            
             return
-        center_x = win32api.GetSystemMetrics(0) // 2
-        center_y = win32api.GetSystemMetrics(1) // 2
-        if radius == 0:
-            closest_target = None
-            closest_dist = float('inf')
-            for target in target_list:
-                dist = ((target['pos'][0] - center_x) ** 2 + (target['pos'][1] - center_y) ** 2) ** 0.5
-                if dist < closest_dist:
-                    closest_target = target['pos']
-                    closest_dist = dist
+
+        width, height = window_size
+        if width is None or height is None or width <= 0 or height <= 0:
+
+            return
+
+        # --- Центр окна ---
+        center_x = width // 2
+        center_y = height // 2
+
+        # --- Переменные для выбора цели ---
+        candidate_target_info = None  # Финальный выбранный кандидат
+        min_dist_2d = float('inf')  # Для режима "Ближайший к прицелу"
+        max_delta_z = -float('inf')  # Для режима "Ближайший в 3D"
+
+        # --- Расчет радиуса в пикселях ---
+        pixel_radius = float('inf')  # По умолчанию - без ограничения
+        if radius > 0:
+            # Базируемся на половине меньшей стороны окна, чтобы круг вписывался
+            base_dim_for_radius = min(width, height)
+            # Делим на 2.0, т.к. радиус от центра; преобразуем настройку 0-100 в долю
+            pixel_radius = (radius / 100.0) * (base_dim_for_radius / 2.0)
+
+
+        # --- Поиск цели ---
+        for target_info in target_list:
+            if 'pos' not in target_info or len(target_info['pos']) != 2:
+                continue  # Пропускаем некорректные цели
+
+            target_x, target_y = target_info['pos']
+
+            # Рассчитываем 2D дистанцию от центра экрана до цели
+            dist_2d = ((target_x - center_x) ** 2 + (target_y - center_y) ** 2) ** 0.5
+
+            # Проверяем, попадает ли цель в радиус (или если радиус 0/неограничен)
+            if dist_2d <= pixel_radius:
+                # Цель в радиусе, теперь выбираем по режиму aim_mode_distance
+                if aim_mode_distance == 1:  # Ближайший в 3D (по deltaZ)
+                    current_deltaZ = target_info.get('deltaZ', -1)  # Получаем deltaZ, если есть
+                    if current_deltaZ is not None and current_deltaZ > max_delta_z:
+                        # Нашли цель "ближе" (больше deltaZ) в 3D в пределах радиуса
+                        max_delta_z = current_deltaZ
+                        candidate_target_info = target_info
+                        
+                else:  # Ближайший к прицелу (по 2D дистанции)
+                    if dist_2d < min_dist_2d:
+                        # Нашли цель ближе к прицелу в пределах радиуса
+                        min_dist_2d = dist_2d
+                        candidate_target_info = target_info
+                        
+
+        # --- Выполнение движения мыши ---
+        if candidate_target_info:
+            target_pos = candidate_target_info['pos']
+            target_x, target_y = target_pos
+
+            # Опциональный вертикальный оффсет (подбирается экспериментально)
+            # Может понадобиться, если точка кости не точно совпадает с желаемой точкой прицеливания
+            vertical_offset = -5  # Отрицательное значение - вверх. 0 - без смещения.
+            # target_y += vertical_offset
+
+            
+
+            # --- Расчет смещения мыши ---
+            move_x = target_x - center_x
+            move_y = target_y - center_y
+
+            # !!! Сглаживание !!!
+            smooth_factor = 0.2  # Коэффициент сглаживания (0.0 до 1.0). Меньше = плавнее, но медленнее.
+            # Подбирается экспериментально. 0.15-0.3 часто хороший старт.
+            move_x = int(move_x * smooth_factor)
+            move_y = int(move_y * smooth_factor)
+
+            # !!! Ограничение максимального смещения за один 'тик' !!!
+            # Предотвращает слишком резкие скачки при появлении новой цели далеко от старой
+            max_move_per_tick = 200  # Максимальное количество пикселей смещения за один вызов
+            move_x = max(-max_move_per_tick, min(max_move_per_tick, move_x))
+            move_y = max(-max_move_per_tick, min(max_move_per_tick, move_y))
+
+            # --- Движение мыши ---
+            # Двигаем, только если есть реальное смещение (больше 0 пикселей после сглаживания и округления)
+            # ИЛИ если цель очень близко к прицелу, но небольшое смещение все же нужно
+            threshold = 1  # Минимальное смещение для срабатывания
+            if abs(move_x) > threshold or abs(move_y) > threshold:
+                
+                try:
+                    win32api.mouse_event(win32con.MOUSEEVENTF_MOVE, move_x, move_y, 0, 0)
+                except Exception as e:
+                    print(f"[AIMBOT ERROR] Failed to execute mouse_event: {e}")
+
+
         else:
-            screen_radius = radius / 100.0 * min(center_x, center_y)
-            closest_target = None
-            closest_dist = float('inf')
-            if aim_mode_distance == 1:
-                target_with_max_deltaZ = None
-                max_deltaZ = -float('inf')
-                for target in target_list:
-                    dist = ((target['pos'][0] - center_x) ** 2 + (target['pos'][1] - center_y) ** 2) ** 0.5
-                    if dist < screen_radius and target['deltaZ'] > max_deltaZ:
-                        max_deltaZ = target['deltaZ']
-                        target_with_max_deltaZ = target
-                closest_target = target_with_max_deltaZ['pos'] if target_with_max_deltaZ else None
-            else:
-                for target in target_list:
-                    dist = ((target['pos'][0] - center_x) ** 2 + (target['pos'][1] - center_y) ** 2) ** 0.5
-                    if dist < screen_radius and dist < closest_dist:
-                        closest_target = target['pos']
-                        closest_dist = dist
-        if closest_target:
-            target_x, target_y = closest_target
-            win32api.mouse_event(win32con.MOUSEEVENTF_MOVE, int(target_x - center_x), int(target_y - center_y), 0, 0)
+            pass
 
     def main(settings):
         offsets, client_dll = get_offsets_and_client_dll()
+
+        # Получаем размер окна один раз при старте
         window_size = get_window_size()
-        pm = pymem.Pymem("cs2.exe")
-        client = pymem.process.module_from_name(pm.process_handle, "client.dll").lpBaseOfDll
+        if window_size == (None, None) or window_size[0] is None or window_size[1] is None:
+            print("Ошибка: Не удалось получить размер окна CS2. Выход из потока aim.")
+            return  # Выход, если окно не найдено
+
+        try:
+            pm = pymem.Pymem("cs2.exe")
+            client = pymem.process.module_from_name(pm.process_handle, "client.dll").lpBaseOfDll
+        except pymem.exception.ProcessNotFound:
+            print("Ошибка: Процесс cs2.exe не найден при запуске потока aim.")
+            return
+
         while True:
-            target_list = []
-            target_list = esp(pm, client, offsets, client_dll, settings, target_list, window_size)
-            if win32api.GetAsyncKeyState(ord(settings['keyboard'])):
-                aimbot(target_list, settings['radius'], settings['aim_mode_distance'])
-            time.sleep(0.001)
+            try:
+                # Перечитываем размер окна, если вдруг он изменился (например, пользователь изменил разрешение)
+                # Это можно делать реже, если производительность критична
+                current_window_size = get_window_size()
+                if current_window_size != (None, None) and current_window_size[0] is not None:
+                    window_size = current_window_size
+                width, height = window_size  # Используем актуальные размеры
+
+                # --- Defensive Check for Aim Key ---
+                aim_key_char = settings.get('keyboard', '')
+                aim_key_code = 0
+
+                if aim_key_char and isinstance(aim_key_char, str) and len(aim_key_char) > 0:
+                    try:
+                        aim_key_code = ord(aim_key_char[0].upper())
+                    except TypeError:
+                        print(f"Warning: Invalid aim key character '{aim_key_char}'. Aim key check skipped.")
+                        aim_key_code = 0
+                # else:
+                #     print("Warning: Aim key ('keyboard') is not set or is empty in settings.")
+
+                # --- ESP Data Acquisition ---
+                target_list = []
+                # Передаем АКТУАЛЬНЫЙ window_size в esp для корректного w2s
+                target_list = esp(pm, client, offsets, client_dll, settings, target_list, window_size)
+
+                # --- Aimbot Activation Check ---
+                if aim_key_code != 0 and win32api.GetAsyncKeyState(aim_key_code):
+                    if settings.get('aim_active', 0) == 1:  # Проверяем, включен ли aim в настройках
+                        
+                        # Передаем АКТУАЛЬНЫЙ window_size в aimbot
+                        aimbot(target_list, settings.get('radius', 20), settings.get('aim_mode_distance', 1), window_size)
+
+
+            except pymem.exception.ProcessNotFound:
+                print("CS2 process not found. Exiting aimbot thread.")
+                break  # Выход из цикла while, если cs2 закрылся
+            except pymem.exception.MemoryReadError as e:
+                print(f"Memory Read Error in aimbot main loop: {e}. Возможно, игра обновилась или адрес невалиден.")
+                time.sleep(1)  # Пауза перед следующей попыткой
+            except Exception as e:
+                print(f"General Error in aimbot main loop: {type(e).__name__} - {e}")
+                import traceback
+                traceback.print_exc()  # Печатаем полный traceback для диагностики
+                time.sleep(1)  # Пауза перед следующей попыткой
+
+            time.sleep(0.001)  # Небольшая пауза для снижения нагрузки на CPU
 
     def start_main_thread(settings):
         while True:
@@ -991,6 +1121,9 @@ def aim():
     main_program()
 
 if __name__ == "__main__":
+    import multiprocessing
+    multiprocessing.freeze_support()  # Добавь эту строку
+
     print("Waiting cs2.exe")
     while True:
         time.sleep(1)
