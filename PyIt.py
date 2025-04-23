@@ -22,8 +22,8 @@ from pynput.keyboard import Controller as KeyboardController, Key
 keyboard = KeyboardController()
 
 # Константы
-CONFIG_DIR = os.path.join(os.environ['LOCALAPPDATA'], 'temp', 'PyIt')
-CONFIG_FILE = os.path.join(CONFIG_DIR, 'config.json')
+CONFIG_DIR = os.path.join(os.getcwd(), 'Py1t')
+CONFIG_FILE = os.path.join(CONFIG_DIR, 'c0nfig.json')
 DEFAULT_SETTINGS = {
     "esp_rendering": 1,
     "esp_mode": 1,
@@ -33,11 +33,11 @@ DEFAULT_SETTINGS = {
     "bons": 1,
     "nickname": 1,
     "radius": 50,
-    "keyboard": "C",
+    "keyboard": "X",
     "aim_active": 0,
     "aim_mode": 1,
     "aim_mode_distance": 1,
-    "trigger_bot_active": 0,
+    "trigger_bot_active": 1,
     "keyboards": "X", 
     "weapon": 1,
     "bomb_esp": 1
