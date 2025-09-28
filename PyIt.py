@@ -60,8 +60,17 @@ def save_settings(settings):
         json.dump(settings, f, indent=4)
 
 def get_offsets_and_client_dll():
-    offsets = requests.get('https://raw.githubusercontent.com/a2x/cs2-dumper/main/output/offsets.json').json()
-    client_dll = requests.get('https://raw.githubusercontent.com/a2x/cs2-dumper/main/output/client_dll.json').json()
+    getoffsetsmethod = 1
+    if getoffsetsmethod == 1:
+        offsets = requests.get('https://raw.githubusercontent.com/a2x/cs2-dumper/main/output/offsets.json').json()
+        client_dll = requests.get('https://raw.githubusercontent.com/a2x/cs2-dumper/main/output/client_dll.json').json()
+    elif getoffsetsmethod == 2:
+        # Читаем файлы и преобразуем содержимое в JSON
+        with open("output\\offsets.json", "r") as f:
+            offsets = json.load(f)
+        with open("output\\client_dll.json", "r") as f:
+            client_dll = json.load(f)
+    print(offsets, client_dll)
     return offsets, client_dll
 
 def get_window_size(window_title):
@@ -360,7 +369,7 @@ class ESPWindow(QtWidgets.QWidget):
             return
 
         self.scene.clear()
-        try:
+        if 1:
             esp(self.scene, self.pm, self.client, self.offsets, self.client_dll, self.window_width, self.window_height, self.settings)
             current_time = time.time()
             self.frame_count += 1
@@ -368,12 +377,9 @@ class ESPWindow(QtWidgets.QWidget):
                 self.fps = self.frame_count
                 self.frame_count = 0
                 self.last_time = current_time
-            fps_text = self.scene.addText(f"PyIt | FPS: {self.fps}", QtGui.QFont('DejaVu Sans', 12, QtGui.QFont.Bold))
+            fps_text = self.scene.addText(f"PyIt Modified | OVERLAY FPS: {self.fps}", QtGui.QFont('DejaVu Sans', 12, QtGui.QFont.Bold))
             fps_text.setPos(5, 5)
             fps_text.setDefaultTextColor(QtGui.QColor(255, 255, 255))
-        except Exception as e:
-            print(f"Scene Update Error: {e}")
-            QtWidgets.QApplication.quit()
 
     def is_game_window_active(self):
         hwnd = win32gui.FindWindow(None, "Counter-Strike 2")
@@ -397,7 +403,7 @@ def esp(scene, pm, client, offsets, client_dll, window_width, window_height, set
     m_hPlayerPawn = client_dll['client.dll']['classes']['CCSPlayerController']['fields']['m_hPlayerPawn']
     m_iHealth = client_dll['client.dll']['classes']['C_BaseEntity']['fields']['m_iHealth']
     m_iszPlayerName = client_dll['client.dll']['classes']['CBasePlayerController']['fields']['m_iszPlayerName']
-    m_pClippingWeapon = client_dll['client.dll']['classes']['C_CSPlayerPawnBase']['fields']['m_pClippingWeapon']
+    m_pClippingWeapon = client_dll['client.dll']['classes']['C_CSPlayerPawn']['fields']['m_pClippingWeapon']
     m_AttributeManager = client_dll['client.dll']['classes']['C_EconEntity']['fields']['m_AttributeManager']
     m_Item = client_dll['client.dll']['classes']['C_AttributeContainer']['fields']['m_Item']
     m_iItemDefinitionIndex = client_dll['client.dll']['classes']['C_EconItemView']['fields']['m_iItemDefinitionIndex']
@@ -742,7 +748,7 @@ def triggerbot():
     dwEntityList = offsets['client.dll']['dwEntityList']
     dwLocalPlayerPawn = offsets['client.dll']['dwLocalPlayerPawn']
     m_iTeamNum = client_dll['client.dll']['classes']['C_BaseEntity']['fields']['m_iTeamNum']
-    m_iIDEntIndex = client_dll['client.dll']['classes']['C_CSPlayerPawnBase']['fields']['m_iIDEntIndex']
+    m_iIDEntIndex = client_dll['client.dll']['classes']['C_CSPlayerPawn']['fields']['m_iIDEntIndex']
     m_iHealth = client_dll['client.dll']['classes']['C_BaseEntity']['fields']['m_iHealth']
     mouse = Controller()
     default_settings = {
